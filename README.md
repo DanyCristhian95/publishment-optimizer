@@ -4,11 +4,11 @@ Este proyecto se utiliza para optimizar imágenes y comprimir PDFs, renombrando 
 
 ## 🛠️ Tecnologías utilizadas
 
-- Node.js ≥ 18
-- pnpm para gestión de dependencias
-- imagemin para optimización de imágenes
-- imagemin-webp para conversión a WebP
-- Ghostscript para compresión de PDFs
+- [Node.js ≥ 18](https://nodejs.org/)
+- [pnpm](https://pnpm.io/) para gestión de dependencias
+- [imagemin](https://www.npmjs.com/package/imagemin) para optimización de imágenes
+- [imagemin-webp](https://www.npmjs.com/package/imagemin-webp) para conversión a WebP
+- [Ghostscript](https://www.ghostscript.com/) para compresión de PDFs
 
 ## 📦 Instalación
 
