@@ -21,15 +21,17 @@ Este proyecto se utiliza para optimizar imágenes y comprimir PDFs, renombrando 
 
 ## 🧹 Estructura del proyecto
 
+```
 project-root/
-├── input/ # Carpeta con archivos y subcarpetas a procesar
-│ └── SUBFOLDER/ # Subcarpeta con imágenes numeradas (001.jpg, 002.png, ...)
-│ └── FILE.pdf # PDF principal (opcional)
-│ └── FILE.webp # Imagen principal (opcional)
-├── output/ # Carpeta generada automáticamente con archivos optimizados
-├── index.js # Script principal de procesamiento
-├── package.json # Dependencias y scripts del proyecto
-└── README.md # Documentación del proyecto
+├── input/             # Carpeta con archivos y subcarpetas a procesar
+│ └── SUBFOLDER/       # Subcarpeta con imágenes numeradas (001.jpg, 002.png, ...)
+│ └── FILE.pdf         # PDF principal (opcional)
+│ └── FILE.webp        # Imagen principal (opcional)
+├── output/            # Carpeta generada automáticamente con archivos optimizados
+├── index.js           # Script principal de procesamiento
+├── package.json       # Dependencias y scripts del proyecto
+└── README.md          # Documentación del proyecto
+```
 
 ## ✅ Buenas prácticas
 
