@@ -64,7 +64,7 @@ async function optimizeImages(inputGlob, outputDestination) {
   }
 }
 
-function compressPDF(inputPath, outputPath, quality = '/ebook') {
+function compressPDF(inputPath, outputPath, quality = '/screen') {
   return new Promise((resolve, reject) => {
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=${quality} \
 -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
