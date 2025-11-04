@@ -28,7 +28,6 @@ cleanOutputFolder(outputDir);
 
 // --- Setup and Folder Identification ---
 
-// Try to get the first subfolder inside 'input' (optional)
 let folderName = null;
 let folderPath = null;
 let outputSubDir = null;
@@ -54,9 +53,7 @@ async function optimizeImages(inputGlob, outputDestination) {
   try {
     const files = await imagemin([inputGlob], {
       destination: outputDestination,
-      plugins: [
-        imageminWebp({ quality: 75 }),
-      ],
+      plugins: [imageminWebp({ quality: 75 })],
     });
     return files.length;
   } catch {
@@ -113,7 +110,19 @@ function compressPDF(inputPath, outputPath, quality = '/screen') {
 
       if (ext === '.pdf') {
         const outputPath = path.join(outputDir, `${newName}${ext}`);
-        await compressPDF(inputPath, outputPath);
+        const stats = fs.statSync(inputPath);
+        const sizeInMB = stats.size / (1024 * 1024);
+
+        console.log(`📄 - PDF size: ${sizeInMB.toFixed(2)} MB`);
+
+        if (sizeInMB >= 15) {
+          console.log('⚙️ - File >= 15 MB → optimizing...');
+          await compressPDF(inputPath, outputPath);
+        } else {
+          console.log('📋 - File < 15 MB → copying directly...');
+          fs.copyFileSync(inputPath, outputPath);
+          console.log(`✅ - Copied PDF → ${path.basename(outputPath)}`);
+        }
       } else if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
         const finalOutputPath = path.join(outputDir, `${newName}.webp`);
         const optimized = await optimizeImages(inputPath, outputDir);
