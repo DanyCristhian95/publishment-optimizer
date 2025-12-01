@@ -61,7 +61,18 @@ async function optimizeImages(inputGlob, outputDestination) {
   }
 }
 
-function compressPDF(inputPath, outputPath, quality = '/screen') {
+// -----------------------------------------------------------------------------
+// Ghostscript PDF Compression Settings (-dPDFSETTINGS)
+// 
+// Ajuste        | Calidad     | Peso generado | DPI aprox. | Uso recomendado
+// -----------------------------------------------------------------------------
+// /screen       | Baja        | Muy ligero    | ~72 dpi    | Vistas rápidas
+// /ebook        | Media       | Ligero        | ~150 dpi   | Lectura en pantalla
+// /printer      | Alta        | Medio         | ~300 dpi   | Impresión estándar
+// /prepress     | Muy alta    | Pesado        | 300+ dpi   | Artes finales / preprensa
+// /default      | Normal      | Variable      | Original   | Uso general
+// -----------------------------------------------------------------------------
+function compressPDF(inputPath, outputPath, quality = '/ebook') {
   return new Promise((resolve, reject) => {
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=${quality} \
 -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
@@ -116,8 +127,14 @@ function compressPDF(inputPath, outputPath, quality = '/screen') {
         console.log(`📄 - PDF size: ${sizeInMB.toFixed(2)} MB`);
 
         if (sizeInMB >= 15) {
-          console.log('⚙️ - File >= 15 MB → optimizing...');
-          await compressPDF(inputPath, outputPath);
+          console.log('⚙️  - File >= 15 MB → optimizing...');
+          try {
+            await compressPDF(inputPath, outputPath);
+          } catch (err) {
+            console.error('⚠️  - PDF optimization failed');
+            console.log('➡️  - Copying original PDF instead...');
+            fs.copyFileSync(inputPath, outputPath);
+          }
         } else {
           console.log('📋 - File < 15 MB → copying directly...');
           fs.copyFileSync(inputPath, outputPath);
