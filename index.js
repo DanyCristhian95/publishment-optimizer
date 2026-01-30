@@ -4,8 +4,8 @@ import imagemin from 'imagemin';
 import imageminWebp from 'imagemin-webp';
 import path from 'path';
 
-const inputDir = "input";
-const outputDir = "output";
+const inputDir = 'input';
+const outputDir = 'output';
 
 // --- 0. Limpiar la carpeta de salida ---
 function cleanOutputFolder(folderPath) {
@@ -19,12 +19,17 @@ function cleanOutputFolder(folderPath) {
 // Get new name from command argument
 const newName = process.argv[2];
 if (!newName) {
-  console.error("❌ - Please provide a new name. Example: pnpm convert HM_12");
+  console.error('❌ - Please provide a new name. Example: pnpm convert HM_12');
   process.exit(1);
 }
 
 // Clean output folder
 cleanOutputFolder(outputDir);
+
+// Creamos la carpeta de salida si no existe
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir, { recursive: true });
+}
 
 // --- Setup and Folder Identification ---
 
@@ -33,15 +38,19 @@ let folderPath = null;
 let outputSubDir = null;
 
 const subfolders = fs.existsSync(inputDir)
-  ? fs.readdirSync(inputDir).filter((f) => fs.lstatSync(path.join(inputDir, f)).isDirectory())
+  ? fs.readdirSync(inputDir).filter((f) =>
+    fs.lstatSync(path.join(inputDir, f)).isDirectory()
+  )
   : [];
 
 if (subfolders.length > 0) {
   folderName = subfolders[0];
   folderPath = path.join(inputDir, folderName);
   outputSubDir = path.join(outputDir, newName);
+
   if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
   if (!fs.existsSync(outputSubDir)) fs.mkdirSync(outputSubDir);
+
   console.log(`📂 - Processing folder: ${folderName}`);
 } else {
   console.log('📁 - No subfolder found. Skipping inner images.');
@@ -61,32 +70,30 @@ async function optimizeImages(inputGlob, outputDestination) {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Ghostscript PDF Compression Settings (-dPDFSETTINGS)
-// 
-// Ajuste        | Calidad     | Peso generado | DPI aprox. | Uso recomendado
-// -----------------------------------------------------------------------------
-// /screen       | Baja        | Muy ligero    | ~72 dpi    | Vistas rápidas
-// /ebook        | Media       | Ligero        | ~150 dpi   | Lectura en pantalla
-// /printer      | Alta        | Medio         | ~300 dpi   | Impresión estándar
-// /prepress     | Muy alta    | Pesado        | 300+ dpi   | Artes finales / preprensa
-// /default      | Normal      | Variable      | Original   | Uso general
-// -----------------------------------------------------------------------------
+// --- PDF Compression ---
 function compressPDF(inputPath, outputPath, quality = '/ebook') {
   return new Promise((resolve, reject) => {
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=${quality} \
 -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
+
     exec(command, (error, _, stderr) => {
       if (error) {
         console.error(`❌ - Error compressing PDF: ${stderr || error.message}`);
         reject(error);
       } else {
-        console.log(`✅ - Compressed PDF → ${path.basename(outputPath)}`);
+        // Medir peso final
+        const stats = fs.statSync(outputPath);
+        const sizeInMB = stats.size / (1024 * 1024);
+
+        console.log(
+          `✅ - Compressed PDF → ${path.basename(outputPath)} (${sizeInMB.toFixed(2)} MB)`
+        );
         resolve();
       }
     });
   });
 }
+
 
 // --- Main Processing Logic ---
 (async () => {
@@ -94,7 +101,10 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
 
   // 1️⃣ Process inner images if folder exists
   if (folderPath && fs.existsSync(folderPath)) {
-    const innerFiles = fs.readdirSync(folderPath).filter((f) => f.match(/\.(webp|jpg|jpeg|png)$/i));
+    const innerFiles = fs
+      .readdirSync(folderPath)
+      .filter((f) => f.match(/\.(webp|jpg|jpeg|png)$/i));
+
     for (const file of innerFiles) {
       const number = file.match(/\d+/)?.[0];
       if (!number) continue;
@@ -103,22 +113,51 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
       const tempInputPath = path.join(folderPath, file);
       const finalOutputPath = path.join(outputSubDir, finalNewFileName);
 
-      const optimized = await optimizeImages(tempInputPath, path.dirname(finalOutputPath));
+      const optimized = await optimizeImages(
+        tempInputPath,
+        path.dirname(finalOutputPath)
+      );
+
       if (optimized > 0) {
         const originalBasename = path.basename(file, path.extname(file));
-        const imageminCreatedFile = path.join(outputSubDir, `${originalBasename}.webp`);
-        if (fs.existsSync(imageminCreatedFile)) fs.renameSync(imageminCreatedFile, finalOutputPath);
+        const imageminCreatedFile = path.join(
+          outputSubDir,
+          `${originalBasename}.webp`
+        );
+
+        if (fs.existsSync(imageminCreatedFile)) {
+          fs.renameSync(imageminCreatedFile, finalOutputPath);
+        }
       }
     }
   }
 
-  // 2️⃣ Process main image and PDF in input folder (optional)
+  // 2️⃣ Process main image and PDF in input folder
   if (fs.existsSync(inputDir)) {
-    const mainFiles = fs.readdirSync(inputDir).filter((f) => !fs.lstatSync(path.join(inputDir, f)).isDirectory());
-    for (const file of mainFiles) {
-      const ext = path.extname(file).toLowerCase();
-      const inputPath = path.join(inputDir, file);
+    const mainFiles = fs
+      .readdirSync(inputDir)
+      .filter((f) => !fs.lstatSync(path.join(inputDir, f)).isDirectory());
 
+    for (const file of mainFiles) {
+      // 🔹 Normalizar nombre
+      const normalizedFile = file
+        .normalize('NFKD')
+        .replace(/[^\w\s.-]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const oldPath = path.join(inputDir, file);
+      const inputPath = path.join(inputDir, normalizedFile);
+
+      // 🔹 Renombrar archivo físico si cambia
+      if (file !== normalizedFile) {
+        fs.renameSync(oldPath, inputPath);
+        console.log(`✏️  Renamed: "${file}" → "${normalizedFile}"`);
+      }
+
+      const ext = path.extname(normalizedFile).toLowerCase();
+
+      // 📄 PDF
       if (ext === '.pdf') {
         const outputPath = path.join(outputDir, `${newName}${ext}`);
         const stats = fs.statSync(inputPath);
@@ -127,11 +166,10 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
         console.log(`📄 - PDF size: ${sizeInMB.toFixed(2)} MB`);
 
         if (sizeInMB >= 15) {
-          console.log('⚙️  - File >= 15 MB → optimizing...');
+          console.log('⚙️ - File >= 15 MB → optimizing...');
           try {
             await compressPDF(inputPath, outputPath);
-          } catch (err) {
-            console.error('⚠️  - PDF optimization failed');
+          } catch {
             console.log('➡️  - Copying original PDF instead...');
             fs.copyFileSync(inputPath, outputPath);
           }
@@ -140,17 +178,30 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
           fs.copyFileSync(inputPath, outputPath);
           console.log(`✅ - Copied PDF → ${path.basename(outputPath)}`);
         }
-      } else if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
+      }
+
+      // 🖼️ Imagen principal
+      else if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
         const finalOutputPath = path.join(outputDir, `${newName}.webp`);
         const optimized = await optimizeImages(inputPath, outputDir);
+
         if (optimized > 0) {
-          const originalBasename = path.basename(file, path.extname(file));
-          const imageminCreatedFile = path.join(outputDir, `${originalBasename}.webp`);
-          if (fs.existsSync(imageminCreatedFile)) fs.renameSync(imageminCreatedFile, finalOutputPath);
+          const originalBasename = path.basename(
+            normalizedFile,
+            path.extname(normalizedFile)
+          );
+          const imageminCreatedFile = path.join(
+            outputDir,
+            `${originalBasename}.webp`
+          );
+
+          if (fs.existsSync(imageminCreatedFile)) {
+            fs.renameSync(imageminCreatedFile, finalOutputPath);
+          }
         }
       }
     }
   }
 
-  console.log("🎉 - Done!");
+  console.log('🎉 - Done!');
 })();
