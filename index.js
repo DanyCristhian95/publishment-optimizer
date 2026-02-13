@@ -6,20 +6,22 @@ import path from 'path';
 
 const inputDir = 'input';
 const outputDir = 'output';
+const CONCURRENCY = 6;
+
 
 // --- Limpiar carpeta output ---
 function cleanOutputFolder(folderPath) {
-  console.log('🧹 - Cleaning output folder.');
+  console.log('🧹 Cleaning output folder...');
   if (fs.existsSync(folderPath)) {
     fs.rmSync(folderPath, { recursive: true, force: true });
-    console.log('✅ - Output folder empty.');
   }
 }
 
-// Nombre nuevo desde CLI
+
+// --- Nombre desde CLI ---
 const newName = process.argv[2];
 if (!newName) {
-  console.error('❌ - Provide name. Example: pnpm convert HM_12');
+  console.error('❌ Provide name. Example: pnpm convert HM_12');
   process.exit(1);
 }
 
@@ -27,56 +29,65 @@ cleanOutputFolder(outputDir);
 fs.mkdirSync(outputDir, { recursive: true });
 
 
-// --- Detectar subcarpeta dentro de input ---
+// --- Detectar subcarpeta ---
 let folderPath = null;
+
 const subfolders = fs.existsSync(inputDir)
   ? fs.readdirSync(inputDir).filter(f =>
     fs.lstatSync(path.join(inputDir, f)).isDirectory()
   )
   : [];
 
-if (subfolders.length > 0) {
+if (subfolders.length) {
   folderPath = path.join(inputDir, subfolders[0]);
-  console.log(`📂 - Processing folder: ${subfolders[0]}`);
-} else {
-  console.log('📁 - No subfolder found.');
+  console.log(`📂 Processing folder: ${subfolders[0]}`);
 }
 
 
-// --- Optimizar imágenes ---
-async function optimizeImages(inputFile, outputDestination) {
+// --- Optimizar imagen ---
+async function optimizeImage(inputFile, outputDestination) {
   try {
     const files = await imagemin([inputFile], {
       destination: outputDestination,
       plugins: [imageminWebp({ quality: 75 })],
     });
     return files.length;
-  } catch {
+  } catch (err) {
+    console.error(`❌ Error optimizing: ${inputFile}`);
     return 0;
   }
+}
+
+
+// --- Extraer número original ---
+function extractNumber(filename) {
+  const match = filename.match(/-(\d+)(?=\.[^.]+$)/);
+  return match ? match[1] : null;
 }
 
 
 // --- Comprimir PDF ---
 function compressPDF(inputPath, outputPath, quality = '/ebook') {
   return new Promise((resolve, reject) => {
-    const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=${quality} \
--dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
+    const cmd = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 \
+-dPDFSETTINGS=${quality} -dNOPAUSE -dQUIET -dBATCH \
+-sOutputFile="${outputPath}" "${inputPath}"`;
 
-    exec(command, (error, _, stderr) => {
+    exec(cmd, (error, _, stderr) => {
       if (error) {
         console.error(`❌ PDF compress error: ${stderr || error.message}`);
         reject(error);
-      } else {
-        const sizeMB =
-          fs.statSync(outputPath).size / (1024 * 1024);
-
-        console.log(
-          `✅ - Compressed PDF → ${path.basename(outputPath)} (${sizeMB.toFixed(2)} MB)`
-        );
-
-        resolve();
+        return;
       }
+
+      const sizeMB =
+        fs.statSync(outputPath).size / (1024 * 1024);
+
+      console.log(
+        `✅ Compressed PDF → ${path.basename(outputPath)} (${sizeMB.toFixed(2)} MB)`
+      );
+
+      resolve();
     });
   });
 }
@@ -84,55 +95,75 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
 
 // --- MAIN ---
 (async () => {
-  console.log('🚀 - Starting optimization...');
+  console.log('🚀 Starting optimization...');
 
-  // 🖼️ IMÁGENES DE SUBCARPETA
   if (folderPath && fs.existsSync(folderPath)) {
     const outputSubDir = path.join(outputDir, newName);
     fs.mkdirSync(outputSubDir, { recursive: true });
 
-    const images = fs.readdirSync(folderPath)
-      .filter(f => f.match(/\.(jpg|jpeg|png|webp)$/i));
+    // Obtener imágenes ordenadas correctamente
+    const images = fs
+      .readdirSync(folderPath)
+      .filter(f => f.match(/\.(jpg|jpeg|png|webp)$/i))
+      .sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true })
+      );
 
-    let counter = 1;
+    // Detectar padding automáticamente
+    const digits = Math.max(
+      ...images
+        .map(f => extractNumber(f))
+        .filter(Boolean)
+        .map(n => n.length),
+      3
+    );
 
-    for (const file of images) {
+    // Procesador individual
+    const processImage = async file => {
       const inputPath = path.join(folderPath, file);
 
-      const optimized = await optimizeImages(
+      const optimized = await optimizeImage(
         inputPath,
         outputSubDir
       );
 
-      if (optimized > 0) {
-        const originalBase = path.basename(
-          file,
-          path.extname(file)
-        );
+      if (!optimized) return;
 
-        const tempWebp = path.join(
-          outputSubDir,
-          `${originalBase}.webp`
-        );
+      const originalBase = path.basename(
+        file,
+        path.extname(file)
+      );
 
-        const finalName =
-          `${newName}-${counter++}.webp`;
+      const tempWebp = path.join(
+        outputSubDir,
+        `${originalBase}.webp`
+      );
 
-        const finalPath = path.join(
-          outputSubDir,
-          finalName
-        );
+      if (!fs.existsSync(tempWebp)) return;
 
-        if (fs.existsSync(tempWebp)) {
-          fs.renameSync(tempWebp, finalPath);
-          // console.log(`🖼️ ${finalName}`);
-        }
-      }
+      const number =
+        extractNumber(file)?.padStart(digits, '0') ||
+        path.parse(file).name;
+
+      const finalPath = path.join(
+        outputSubDir,
+        `${newName}-${number}.webp`
+      );
+
+      fs.renameSync(tempWebp, finalPath);
+      // console.log(`🖼️ ${path.basename(finalPath)}`);
+    };
+
+    // Paralelización con límite
+    for (let i = 0; i < images.length; i += CONCURRENCY) {
+      await Promise.all(
+        images.slice(i, i + CONCURRENCY).map(processImage)
+      );
     }
   }
 
 
-  // 📄 PDF + imagen principal en raíz input
+  // PDF + imagen raíz
   const mainFiles = fs.readdirSync(inputDir)
     .filter(f =>
       !fs.lstatSync(path.join(inputDir, f)).isDirectory()
@@ -142,16 +173,14 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
     const inputPath = path.join(inputDir, file);
     const ext = path.extname(file).toLowerCase();
 
-    // PDF
     if (ext === '.pdf') {
       const outputPath = path.join(outputDir, `${newName}.pdf`);
       const sizeMB =
         fs.statSync(inputPath).size / (1024 * 1024);
 
-      console.log(`📄 - PDF size: ${sizeMB.toFixed(2)} MB`);
+      console.log(`📄 PDF size: ${sizeMB.toFixed(2)} MB`);
 
       if (sizeMB >= 15) {
-        console.log('⚙️ - Compressing PDF...');
         try {
           await compressPDF(inputPath, outputPath);
         } catch {
@@ -159,26 +188,23 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
         }
       } else {
         fs.copyFileSync(inputPath, outputPath);
-        console.log(`✅ - Copied PDF → ${newName}.pdf`);
       }
     }
 
-    // Imagen principal
     else if (file.match(/\.(jpg|jpeg|png|webp)$/i)) {
-      const optimized = await optimizeImages(inputPath, outputDir);
+      const optimized = await optimizeImage(inputPath, outputDir);
 
-      if (optimized > 0) {
-        const base = path.basename(file, ext);
-        const tempWebp = path.join(outputDir, `${base}.webp`);
-        const finalPath = path.join(outputDir, `${newName}.webp`);
+      if (!optimized) continue;
 
-        if (fs.existsSync(tempWebp)) {
-          fs.renameSync(tempWebp, finalPath);
-          // console.log(`🖼️ Main image → ${newName}.webp`);
-        }
+      const base = path.basename(file, ext);
+      const tempWebp = path.join(outputDir, `${base}.webp`);
+      const finalPath = path.join(outputDir, `${newName}.webp`);
+
+      if (fs.existsSync(tempWebp)) {
+        fs.renameSync(tempWebp, finalPath);
       }
     }
   }
 
-  console.log('🎉 - Done!');
+  console.log('🎉 Done!');
 })();
