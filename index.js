@@ -8,6 +8,34 @@ const inputDir = 'input';
 const outputDir = 'output';
 const CONCURRENCY = 6;
 
+// --- Obtener tamaño de carpeta (recursivo) ---
+function getFolderSize(folderPath) {
+  let totalSize = 0;
+
+  if (!fs.existsSync(folderPath)) return 0;
+
+  const files = fs.readdirSync(folderPath);
+
+  for (const file of files) {
+    const fullPath = path.join(folderPath, file);
+    const stats = fs.statSync(fullPath);
+
+    if (stats.isDirectory()) {
+      totalSize += getFolderSize(fullPath);
+    } else {
+      totalSize += stats.size;
+    }
+  }
+
+  return totalSize;
+}
+
+
+// --- Formatear bytes a MB ---
+function formatMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(2);
+}
+
 
 // --- Limpiar carpeta output ---
 function cleanOutputFolder(folderPath) {
@@ -24,6 +52,9 @@ if (!newName) {
   console.error('❌ Provide name. Example: pnpm convert HM_12');
   process.exit(1);
 }
+
+const initialSize = getFolderSize(inputDir);
+console.log(`📦 Input size: ${formatMB(initialSize)} MB`);
 
 cleanOutputFolder(outputDir);
 fs.mkdirSync(outputDir, { recursive: true });
@@ -206,5 +237,15 @@ function compressPDF(inputPath, outputPath, quality = '/ebook') {
     }
   }
 
+  const finalSize = getFolderSize(outputDir);
+
+  console.log(`📦 Output size: ${formatMB(finalSize)} MB`);
+
+  const reduction = initialSize - finalSize;
+  const reductionPercent = initialSize
+    ? ((reduction / initialSize) * 100).toFixed(2)
+    : 0;
+
+  console.log(`📉 Reduction: ${formatMB(reduction)} MB (${reductionPercent}%)`);
   console.log('🎉 Done!');
 })();
